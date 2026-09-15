@@ -57,6 +57,15 @@ func InstallService(binaryPath string, port int) error {
 		return fmt.Errorf("failed to enable and start service: %s (%w)", string(out), err)
 	}
 
+	binDir := filepath.Join(home, ".local", "bin")
+	if _, err := os.Stat(binDir); err == nil {
+		symlinkTarget := filepath.Join(binDir, "gemini-proxy")
+		_ = os.Remove(symlinkTarget)
+		if err := os.Symlink(absBinary, symlinkTarget); err == nil {
+			log.Printf("[Systemd] Symlinked binary to: %s", symlinkTarget)
+		}
+	}
+
 	log.Printf("[Systemd] Service gemini-proxy enabled and started successfully")
 	return nil
 }

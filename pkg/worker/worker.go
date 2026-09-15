@@ -36,6 +36,7 @@ func NewWorker(model string, onDead func()) (*Worker, error) {
 		"--input-format", "stream-json",
 		"--output-format", "stream-json",
 		"--dangerously-skip-permissions",
+		"--disable-slash-commands",
 		"-p", "",
 	}
 
@@ -232,11 +233,15 @@ func (w *Worker) SendPrompt(ctx context.Context, prompt string, onDelta func(str
 func (w *Worker) markDead() {
 	if w.isHealthy.CompareAndSwap(true, false) {
 		log.Printf("[Worker %s] Marked as dead", w.model)
-		if w.cmd != nil && w.cmd.Process != nil {
-			_ = w.cmd.Process.Kill()
-		}
 		if w.stdin != nil {
 			_ = w.stdin.Close()
+		}
+		if w.cmd != nil && w.cmd.Process != nil {
+			_ = w.cmd.Process.Kill()
+			// Reap zombie process in background so process table is freed
+			go func() {
+				_ = w.cmd.Wait()
+			}()
 		}
 		if w.onDead != nil {
 			w.onDead()
@@ -244,7 +249,7 @@ func (w *Worker) markDead() {
 	}
 }
 
-// Close terminates the worker process.
+// Close terminates the worker process and reaps it.
 func (w *Worker) Close() {
 	w.isHealthy.Store(false)
 	if w.stdin != nil {

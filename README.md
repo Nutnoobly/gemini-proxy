@@ -58,16 +58,22 @@ The binary is already compiled in the repository:
 go build -o gemini-proxy .
 ```
 
-### 2. Install & Start Systemd Service
-To enable `gemini-proxy` to run continuously in the background:
+### 2. Install & Start Systemd Service (On-Demand Socket Activation)
+To install `gemini-proxy` with on-demand socket activation and automatic idle scale-to-zero:
 ```bash
 ./gemini-proxy service install
 ```
-Verify service status:
+With socket activation:
+- `gemini-proxy.socket` listens on port 8080 taking 0 MB RAM and 0% CPU while idle.
+- When Hermes Agent sends a query, systemd activates `gemini-proxy` instantly.
+- After 10 minutes of inactivity (configurable via `--idle-timeout`), `gemini-proxy` gracefully shuts down and frees all memory.
+- When Hermes sends another query, it wakes up automatically!
+
+Verify status:
 ```bash
 ./gemini-proxy service status
 # or
-systemctl --user status gemini-proxy
+systemctl --user status gemini-proxy.socket gemini-proxy.service
 ```
 
 ### 3. Configure Hermes Agent
@@ -108,25 +114,28 @@ gemini-proxy <command> [options]
 Commands:
   serve         Start the proxy HTTP server in foreground (default)
                 Flags:
-                  --host <ip>    Bind IP (default: 127.0.0.1)
-                  --port <port>  Listen port (default: 8080)
+                  --host <ip>          Bind IP (default: 127.0.0.1)
+                  --port <port>        Listen port (default: 8080)
+                  --idle-timeout <dur> Auto-shutdown after inactivity (default: 10m, 0 to disable)
+                  --watch-hermes       Auto-shutdown when Hermes Agent closes (default: true)
 
   setup-hermes  Configure ~/.hermes/config.yaml for GeminiProxy
                 Flags:
-                  --base-url <url>   Proxy base URL (default: http://127.0.0.1:8080/v1)
-                  --model <name>     Model name (default: gemini-3.8-flash-high)
+                  --base-url <url>     Proxy base URL (default: http://127.0.0.1:8080/v1)
+                  --model <name>       Model name (default: gemini-3.8-flash-high)
 
-  service       Manage systemd background service
+  service       Manage systemd on-demand background service
                 Actions:
-                  install   Install unit file, enable, and start
-                  status    Show systemctl status
-                  stop      Stop the background daemon
-                  restart   Restart the daemon
+                  install              Install socket & service unit files, enable, and activate
+                                       Flags: --port 8080, --idle-timeout 10m
+                  status               Show socket and service status
+                  stop                 Stop the background daemon and socket
+                  restart              Restart the daemon and socket
 
   test          Send a synthetic chat completion test
                 Flags:
-                  --url <url>       Proxy base URL (default: http://127.0.0.1:8080/v1)
-                  --model <name>    Model name (default: gemini-3.8-flash-high)
+                  --url <url>          Proxy base URL (default: http://127.0.0.1:8080/v1)
+                  --model <name>       Model name (default: gemini-3.8-flash-high)
 ```
 
 ---

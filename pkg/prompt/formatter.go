@@ -12,6 +12,9 @@ import (
 func FormatPrompt(messages []types.ChatMessage, tools []types.Tool) string {
 	var sb strings.Builder
 
+	// Prepend completion engine notice so model does not run CLI commands
+	sb.WriteString("[SYSTEM NOTICE: You are acting strictly as an LLM completion backend. DO NOT execute host commands or call local tools directly. Only return text or requested <tool_call> XML tags.]\n\n")
+
 	// If tools are provided, prepend system tool guidance
 	if len(tools) > 0 {
 		sb.WriteString("[SYSTEM INSTRUCTION: TOOL CALLING]\n")

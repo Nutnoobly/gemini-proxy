@@ -68,16 +68,26 @@ func NormalizeModel(input string) string {
 
 // WorkerPool manages a pool of model workers with idle shutdown.
 type WorkerPool struct {
-	mu      sync.Mutex
-	workers map[string]*Worker
-	stopCh  chan struct{}
+	mu          sync.Mutex
+	workers     map[string]*Worker
+	stopCh      chan struct{}
+	idleTimeout time.Duration
 }
 
-// NewWorkerPool initializes the pool and starts the idle reaper.
+// NewWorkerPool initializes the pool with default idle timeout and starts the reaper.
 func NewWorkerPool() *WorkerPool {
+	return NewWorkerPoolWithTimeout(IdleTimeout)
+}
+
+// NewWorkerPoolWithTimeout initializes the pool with custom idle timeout.
+func NewWorkerPoolWithTimeout(idleTimeout time.Duration) *WorkerPool {
+	if idleTimeout <= 0 {
+		idleTimeout = IdleTimeout
+	}
 	p := &WorkerPool{
-		workers: make(map[string]*Worker),
-		stopCh:  make(chan struct{}),
+		workers:     make(map[string]*Worker),
+		stopCh:      make(chan struct{}),
+		idleTimeout: idleTimeout,
 	}
 	go p.reapLoop()
 	return p
@@ -118,9 +128,9 @@ func (p *WorkerPool) GetWorker(ctx context.Context, modelName string) (*Worker, 
 	return newW, nil
 }
 
-// reapLoop periodically shuts down workers that have been idle past IdleTimeout.
+// reapLoop periodically shuts down workers that have been idle past idleTimeout.
 func (p *WorkerPool) reapLoop() {
-	ticker := time.NewTicker(2 * time.Minute)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -136,7 +146,7 @@ func (p *WorkerPool) reapLoop() {
 					w.Close()
 					continue
 				}
-				if now.Sub(w.LastUsed()) > IdleTimeout {
+				if now.Sub(w.LastUsed()) > p.idleTimeout {
 					log.Printf("[WorkerPool] Pruning idle worker for %s (idle for %v)", model, now.Sub(w.LastUsed()).Round(time.Second))
 					delete(p.workers, model)
 					w.Close()

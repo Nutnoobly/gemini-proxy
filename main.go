@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -55,48 +57,142 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(banner)
+	fmt.Print(banner)
 	fmt.Println("Usage: gemini-proxy <command> [options]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  serve         Start the OpenAI-compatible proxy server (default)")
+	fmt.Println("                --host <ip>          Host interface to bind (default: 127.0.0.1)")
+	fmt.Println("                --port <port>        Port to listen on (default: 8080)")
+	fmt.Println("                --idle-timeout <dur> Auto-shutdown after inactivity (default: 10m, 0 to disable)")
+	fmt.Println("                --watch-hermes       Auto-shutdown when Hermes Agent closes (default: true)")
 	fmt.Println("  setup-hermes  Configure ~/.hermes/config.yaml to use GeminiProxy")
 	fmt.Println("  service       Manage systemd background service (install, status, stop, restart)")
+	fmt.Println("                --port <port>        Service port (default: 8080)")
+	fmt.Println("                --idle-timeout <dur> Service idle timeout (default: 10m)")
 	fmt.Println("  test          Send a test request to verify proxy operation")
 	fmt.Println("\nRun 'gemini-proxy <command> --help' for command-specific flags.")
+}
+
+func getListener(addr string) (net.Listener, error) {
+	// Check for systemd socket activation
+	if pidStr := os.Getenv("LISTEN_PID"); pidStr == strconv.Itoa(os.Getpid()) {
+		if fdsStr := os.Getenv("LISTEN_FDS"); fdsStr != "" {
+			if fds, err := strconv.Atoi(fdsStr); err == nil && fds >= 1 {
+				log.Printf("[Main] Using systemd socket activation (FD 3)")
+				file := os.NewFile(3, "systemd-socket")
+				l, err := net.FileListener(file)
+				_ = file.Close()
+				if err != nil {
+					return nil, fmt.Errorf("failed to adopt systemd socket: %w", err)
+				}
+				return l, nil
+			}
+		}
+	}
+	return net.Listen("tcp", addr)
 }
 
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	host := fs.String("host", "127.0.0.1", "Host interface to bind")
 	port := fs.Int("port", 8080, "Port to listen on")
+	idleTimeout := fs.Duration("idle-timeout", 10*time.Minute, "Auto-shutdown after period of inactivity (e.g. 5m, 10m, 0 to disable)")
+	watchHermes := fs.Bool("watch-hermes", true, "Automatically shut down proxy when Hermes Agent closes")
 	_ = fs.Parse(args)
 
-	fmt.Println(banner)
+	fmt.Print(banner)
 	log.Printf("[Main] Initializing GeminiProxy on %s:%d...", *host, *port)
+	if *idleTimeout > 0 {
+		log.Printf("[Main] Idle auto-shutdown enabled: server will exit after %v with no requests", *idleTimeout)
+	} else {
+		log.Printf("[Main] Idle auto-shutdown disabled: server will run indefinitely")
+	}
 
-	pool := worker.NewWorkerPool()
+	workerIdle := 5 * time.Minute
+	if *idleTimeout > 0 && *idleTimeout < workerIdle {
+		workerIdle = *idleTimeout
+	}
+	pool := worker.NewWorkerPoolWithTimeout(workerIdle)
 	server := api.NewServer(pool)
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
+	listener, err := getListener(addr)
+	if err != nil {
+		log.Fatalf("[Main] Failed to bind/adopt listener on %s: %v", addr, err)
+	}
+
 	httpServer := &http.Server{
-		Addr:    addr,
 		Handler: server.Routes(),
 	}
 
-	// Graceful shutdown channel
+	// Graceful shutdown channels
 	stopCh := make(chan os.Signal, 1)
 	signal.Notify(stopCh, os.Interrupt, syscall.SIGTERM)
+	idleShutdownCh := make(chan struct{})
+
+	// Hermes process lifecycle watcher
+	if *watchHermes {
+		log.Println("[Main] Hermes watcher enabled: will shut down automatically when Hermes closes")
+		hermesWatcher := service.NewHermesWatcher(func() {
+			select {
+			case <-idleShutdownCh:
+			default:
+				close(idleShutdownCh)
+			}
+		})
+		hermesWatcher.Start()
+		defer hermesWatcher.Stop()
+
+		server.SetOnActivity(func() {
+			hermesWatcher.Arm()
+		})
+	}
+
+	// Idle auto-shutdown watcher
+	if *idleTimeout > 0 {
+		go func() {
+			checkInterval := 10 * time.Second
+			if *idleTimeout < 10*time.Second {
+				checkInterval = time.Second
+			}
+			ticker := time.NewTicker(checkInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-stopCh:
+					return
+				case <-idleShutdownCh:
+					return
+				case <-ticker.C:
+					if server.ActiveRequests() == 0 {
+						idleDuration := time.Since(server.LastActivity())
+						if idleDuration >= *idleTimeout {
+							log.Printf("[Main] Inactive for %v (limit %v). Shutting down automatically...",
+								idleDuration.Round(time.Second), *idleTimeout)
+							close(idleShutdownCh)
+							return
+						}
+					}
+				}
+			}
+		}()
+	}
 
 	go func() {
 		log.Printf("[Main] Listening for Hermes connections on http://%s/v1", addr)
 		log.Printf("[Main] Models endpoint available at http://%s/v1/models", addr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("[Main] Server failure: %v", err)
 		}
 	}()
 
-	<-stopCh
-	log.Println("[Main] Shutting down gracefully...")
+	select {
+	case sig := <-stopCh:
+		log.Printf("[Main] Received signal %v. Shutting down gracefully...", sig)
+	case <-idleShutdownCh:
+		log.Println("[Main] Auto-shutdown triggered due to inactivity. Shutting down gracefully...")
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -122,13 +218,14 @@ func runSetupHermes(args []string) {
 
 func runService(args []string) {
 	if len(args) == 0 {
-		fmt.Println("Usage: gemini-proxy service <install|status|stop|restart> [--port 8080]")
+		fmt.Println("Usage: gemini-proxy service <install|status|stop|restart> [--port 8080] [--idle-timeout 10m]")
 		return
 	}
 
 	sub := args[0]
 	fs := flag.NewFlagSet("service", flag.ExitOnError)
 	port := fs.Int("port", 8080, "Port for service")
+	idleTimeout := fs.String("idle-timeout", "10m", "Idle duration before auto-shutdown (e.g. 5m, 10m, or 0 to disable)")
 	_ = fs.Parse(args[1:])
 
 	exe, err := os.Executable()
@@ -138,10 +235,10 @@ func runService(args []string) {
 
 	switch sub {
 	case "install":
-		if err := service.InstallService(exe, *port); err != nil {
+		if err := service.InstallService(exe, *port, *idleTimeout); err != nil {
 			log.Fatalf("Installation failed: %v", err)
 		}
-		fmt.Println("\n✓ Service installed and started.")
+		fmt.Printf("\n✓ Service & socket installed with on-demand activation and %s idle auto-shutdown.\n", *idleTimeout)
 		fmt.Println("Check status with: gemini-proxy service status")
 	case "status":
 		_ = service.StatusService()

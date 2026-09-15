@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gemini-proxy/pkg/prompt"
@@ -17,12 +18,41 @@ import (
 
 // Server handles OpenAI-compatible HTTP endpoints.
 type Server struct {
-	pool *worker.WorkerPool
+	pool           *worker.WorkerPool
+	activeRequests atomic.Int64
+	lastActivity   atomic.Int64 // UnixNano
+	onActivity     func()
 }
 
 // NewServer creates a new API Server backed by the worker pool.
 func NewServer(pool *worker.WorkerPool) *Server {
-	return &Server{pool: pool}
+	s := &Server{pool: pool}
+	s.lastActivity.Store(time.Now().UnixNano())
+	return s
+}
+
+// SetOnActivity sets an optional callback triggered on chat activity.
+func (s *Server) SetOnActivity(fn func()) {
+	s.onActivity = fn
+}
+
+// ActiveRequests returns number of currently processing requests.
+func (s *Server) ActiveRequests() int64 {
+	return s.activeRequests.Load()
+}
+
+// LastActivity returns the timestamp of the last incoming chat request.
+func (s *Server) LastActivity() time.Time {
+	nanos := s.lastActivity.Load()
+	if nanos == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, nanos)
+}
+
+// Touch marks current time as active activity.
+func (s *Server) Touch() {
+	s.lastActivity.Store(time.Now().UnixNano())
 }
 
 func generateCompletionID() string {
@@ -40,6 +70,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/chat/completions", s.handleChatCompletions)
 	mux.HandleFunc("/v1/models", s.handleModels)
 	mux.HandleFunc("/models", s.handleModels)
+	mux.HandleFunc("/v1/models/", s.handleModelDetail)
+
+	// Ollama / Hermes capability probe compatibility
+	mux.HandleFunc("/api/tags", s.handleOllamaTags)
+	mux.HandleFunc("/api/show", s.handleOllamaShow)
+	mux.HandleFunc("/api/version", s.handleVersion)
+	mux.HandleFunc("/version", s.handleVersion)
+	mux.HandleFunc("/props", s.handleProps)
+	mux.HandleFunc("/v1/props", s.handleProps)
 
 	// Health check
 	mux.HandleFunc("/health", s.handleHealth)
@@ -102,11 +141,77 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleModelDetail(w http.ResponseWriter, r *http.Request) {
+	modelID := strings.TrimPrefix(r.URL.Path, "/v1/models/")
+	canonical := worker.NormalizeModel(modelID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ModelCard{
+		ID:      canonical,
+		Object:  "model",
+		Created: time.Now().Unix(),
+		OwnedBy: "google",
+	})
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": "1.0.0"})
+}
+
+func (s *Server) handleProps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"default_generation_settings": map[string]any{
+			"n_ctx": 1048576,
+		},
+	})
+}
+
+func (s *Server) handleOllamaTags(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"models": []map[string]any{
+			{
+				"name":        worker.DefaultModel,
+				"model":       worker.DefaultModel,
+				"modified_at": time.Now().Format(time.RFC3339),
+				"size":        0,
+			},
+		},
+	})
+}
+
+func (s *Server) handleOllamaShow(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"parameters": "",
+		"template":   "",
+		"details": map[string]any{
+			"format":             "custom",
+			"family":             "gemini",
+			"parameter_size":     "128B",
+			"quantization_level": "none",
+		},
+		"model_info": map[string]any{
+			"general.architecture": "gemini",
+		},
+	})
+}
+
 func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	s.activeRequests.Add(1)
+	if s.onActivity != nil {
+		s.onActivity()
+	}
+	defer func() {
+		s.activeRequests.Add(-1)
+		s.lastActivity.Store(time.Now().UnixNano())
+	}()
 
 	var req ChatCompletionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

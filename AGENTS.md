@@ -45,7 +45,7 @@ To prevent irreversible data loss or unintentional state corruption, agents **MU
 
 - **Run Server Directly**:
   ```bash
-  ./gemini-proxy serve --port 8080
+  ./gemini-proxy serve --port 8888
   ```
 
 - **Service Management**:

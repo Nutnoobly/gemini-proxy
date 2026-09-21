@@ -62,12 +62,12 @@ func printUsage() {
 	fmt.Println("\nCommands:")
 	fmt.Println("  serve         Start the OpenAI-compatible proxy server (default)")
 	fmt.Println("                --host <ip>          Host interface to bind (default: 127.0.0.1)")
-	fmt.Println("                --port <port>        Port to listen on (default: 8080)")
+	fmt.Println("                --port <port>        Port to listen on (default: 8888)")
 	fmt.Println("                --idle-timeout <dur> Auto-shutdown after inactivity (default: 10m, 0 to disable)")
 	fmt.Println("                --watch-hermes       Auto-shutdown when Hermes Agent closes (default: true)")
 	fmt.Println("  setup-hermes  Configure ~/.hermes/config.yaml to use GeminiProxy")
 	fmt.Println("  service       Manage systemd background service (install, status, stop, restart)")
-	fmt.Println("                --port <port>        Service port (default: 8080)")
+	fmt.Println("                --port <port>        Service port (default: 8888)")
 	fmt.Println("                --idle-timeout <dur> Service idle timeout (default: 10m)")
 	fmt.Println("  test          Send a test request to verify proxy operation")
 	fmt.Println("\nRun 'gemini-proxy <command> --help' for command-specific flags.")
@@ -95,7 +95,7 @@ func getListener(addr string) (net.Listener, error) {
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	host := fs.String("host", "127.0.0.1", "Host interface to bind")
-	port := fs.Int("port", 8080, "Port to listen on")
+	port := fs.Int("port", 8888, "Port to listen on")
 	idleTimeout := fs.Duration("idle-timeout", 10*time.Minute, "Auto-shutdown after period of inactivity (e.g. 5m, 10m, 0 to disable)")
 	watchHermes := fs.Bool("watch-hermes", true, "Automatically shut down proxy when Hermes Agent closes")
 	_ = fs.Parse(args)
@@ -204,7 +204,7 @@ func runServe(args []string) {
 
 func runSetupHermes(args []string) {
 	fs := flag.NewFlagSet("setup-hermes", flag.ExitOnError)
-	baseURL := fs.String("base-url", "http://127.0.0.1:8080/v1", "Proxy base URL for Hermes")
+	baseURL := fs.String("base-url", "http://127.0.0.1:8888/v1", "Proxy base URL for Hermes")
 	model := fs.String("model", "gemini-3.8-flash-high", "Default model to configure in Hermes")
 	_ = fs.Parse(args)
 
@@ -218,13 +218,13 @@ func runSetupHermes(args []string) {
 
 func runService(args []string) {
 	if len(args) == 0 {
-		fmt.Println("Usage: gemini-proxy service <install|status|stop|restart> [--port 8080] [--idle-timeout 10m]")
+		fmt.Println("Usage: gemini-proxy service <install|status|stop|restart> [--port 8888] [--idle-timeout 10m]")
 		return
 	}
 
 	sub := args[0]
 	fs := flag.NewFlagSet("service", flag.ExitOnError)
-	port := fs.Int("port", 8080, "Port for service")
+	port := fs.Int("port", 8888, "Port for service")
 	idleTimeout := fs.String("idle-timeout", "10m", "Idle duration before auto-shutdown (e.g. 5m, 10m, or 0 to disable)")
 	_ = fs.Parse(args[1:])
 
@@ -257,7 +257,7 @@ func runService(args []string) {
 
 func runTest(args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
-	baseURL := fs.String("url", "http://127.0.0.1:8080/v1", "Base URL of running proxy")
+	baseURL := fs.String("url", "http://127.0.0.1:8888/v1", "Base URL of running proxy")
 	model := fs.String("model", "gemini-3.8-flash-high", "Model to test")
 	_ = fs.Parse(args)
 

@@ -31,6 +31,12 @@ func NormalizeModel(input string) string {
 
 	// Direct matches
 	switch raw {
+	case "gemini-4-argon", "gemini-4-argon-high", "gemini4-argon", "gemini4-argon-high", "gemini-4-high", "gemini4-high", "argon", "argon-high", "gemini-argon":
+		return "gemini-4-argon-high"
+	case "gemini-4-argon-medium", "gemini4-argon-medium", "gemini-4-medium", "gemini4-medium", "argon-medium":
+		return "gemini-4-argon-medium"
+	case "gemini-4-argon-low", "gemini4-argon-low", "gemini-4-low", "gemini4-low", "argon-low":
+		return "gemini-4-argon-low"
 	case "gemini-3.8-flash", "gemini-3.8-flash-high", "flash", "flash-high", "gemini-flash":
 		return "gemini-3.8-flash-high"
 	case "gemini-3.8-flash-medium", "flash-medium":
@@ -52,6 +58,15 @@ func NormalizeModel(input string) string {
 	}
 
 	// Substring heuristics for Gemini
+	if strings.Contains(raw, "argon") || strings.Contains(raw, "gemini-4") || strings.Contains(raw, "gemini4") {
+		if strings.Contains(raw, "low") {
+			return "gemini-4-argon-low"
+		}
+		if strings.Contains(raw, "med") {
+			return "gemini-4-argon-medium"
+		}
+		return "gemini-4-argon-high"
+	}
 	if strings.Contains(raw, "pro") {
 		return "gemini-3.1-pro-high"
 	}

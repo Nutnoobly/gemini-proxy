@@ -1,7 +1,7 @@
 # AGENTS.md - Guidelines for GeminiProxy
 
 ## Project Overview
-GeminiProxy is a lightweight, high-performance Go proxy daemon that allows Hermes Agent to use Google Gemini models via the local authenticated Google Antigravity CLI (`agy`).
+GeminiProxy is a lightweight, high-performance Go proxy daemon that allows Hermes Agent to use Google Gemini models (including Gemini 4 Argon, Gemini 3.8 Flash, and Gemini 3.1 Pro) via the local authenticated Google Antigravity CLI (`agy`).
 
 ### Key Components
 - `main.go`: CLI entrypoint and subcommand routing (`serve`, `setup-hermes`, `service`, `test`).

@@ -8,7 +8,7 @@ Zero external API keys, zero cloud costs beyond your Google account quota, and f
 
 ## 🌟 Key Features
 
-- **Pure Google Gemini**: Direct integration with Google's flagship reasoning models: `gemini-3.8-flash-high` (default), `gemini-3.1-pro-high`, and `gemini-3.7-flash-high`.
+- **Pure Google Gemini**: Direct integration with Google's flagship reasoning models: `gemini-4-argon` (frontier reasoning & agentic workflows), `gemini-3.8-flash-high` (default), `gemini-3.1-pro-high`, and `gemini-3.7-flash-high`.
 - **Hermes Tool Calling**: Translates Hermes agent tools (bash/terminal, file editing, web search, etc.) into structured model prompts and converts model responses back into standard OpenAI `tool_calls`.
 - **Persistent Worker Pool**: Keeps `agy` CLI background worker processes alive via `--input-format stream-json --output-format stream-json` for sub-second turn latency without repeated startup overhead.
 - **Real-Time SSE Streaming**: Native Server-Sent Events (`text/event-stream`) for token-by-token streaming in the Hermes terminal and TUI.
@@ -44,7 +44,7 @@ Zero external API keys, zero cloud costs beyond your Google account quota, and f
                             │ Authenticated Google Cloud RPC
                             ▼
 ┌─────────────────────────────────────────────────────────┐
-│ Google Gemini Intelligence (Gemini 3.8 Flash / 3.1 Pro) │
+│ Google Gemini Intelligence (Gemini 4 Argon / 3.8 Flash) │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -146,6 +146,9 @@ You can specify any of the following model aliases in Hermes (`hermes -m <model>
 
 | Model Name / Alias | Canonical Model Slug | Description |
 | :--- | :--- | :--- |
+| `gemini-4-argon`, `gemini-4-argon-high`, `argon`, `argon-high` | `gemini-4-argon-high` | **Frontier.** Gemini 4 Argon flagship high-effort reasoning & agentic coding. |
+| `gemini-4-argon-medium`, `argon-medium` | `gemini-4-argon-medium` | Gemini 4 Argon balanced reasoning model. |
+| `gemini-4-argon-low`, `argon-low` | `gemini-4-argon-low` | Gemini 4 Argon low reasoning latency model. |
 | `gemini-3.8-flash-high`, `gemini 3.8 flash`, `flash` | `gemini-3.8-flash-high` | **Default.** Ultra-fast reasoning & coding. |
 | `gemini-3.8-flash-medium` | `gemini-3.8-flash-medium` | Balanced reasoning flash model. |
 | `gemini-3.8-flash-low` | `gemini-3.8-flash-low` | Lowest reasoning latency flash model. |

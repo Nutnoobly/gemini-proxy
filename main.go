@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -66,7 +67,7 @@ func printUsage() {
 	fmt.Println("                --idle-timeout <dur> Auto-shutdown after inactivity (default: 10m, 0 to disable)")
 	fmt.Println("                --watch-hermes       Auto-shutdown when Hermes Agent closes (default: true)")
 	fmt.Println("  setup-hermes  Configure ~/.hermes/config.yaml to use GeminiProxy")
-	fmt.Println("  service       Manage systemd background service (install, status, stop, restart)")
+	fmt.Println("  service       Manage background service (install, status, stop, restart)")
 	fmt.Println("                --port <port>        Service port (default: 8888)")
 	fmt.Println("                --idle-timeout <dur> Service idle timeout (default: 10m)")
 	fmt.Println("  test          Send a test request to verify proxy operation")
@@ -74,18 +75,20 @@ func printUsage() {
 }
 
 func getListener(addr string) (net.Listener, error) {
-	// Check for systemd socket activation
-	if pidStr := os.Getenv("LISTEN_PID"); pidStr == strconv.Itoa(os.Getpid()) {
-		if fdsStr := os.Getenv("LISTEN_FDS"); fdsStr != "" {
-			if fds, err := strconv.Atoi(fdsStr); err == nil && fds >= 1 {
-				log.Printf("[Main] Using systemd socket activation (FD 3)")
-				file := os.NewFile(3, "systemd-socket")
-				l, err := net.FileListener(file)
-				_ = file.Close()
-				if err != nil {
-					return nil, fmt.Errorf("failed to adopt systemd socket: %w", err)
+	// Check for systemd socket activation on non-Windows platforms
+	if runtime.GOOS != "windows" {
+		if pidStr := os.Getenv("LISTEN_PID"); pidStr == strconv.Itoa(os.Getpid()) {
+			if fdsStr := os.Getenv("LISTEN_FDS"); fdsStr != "" {
+				if fds, err := strconv.Atoi(fdsStr); err == nil && fds >= 1 {
+					log.Printf("[Main] Using systemd socket activation (FD 3)")
+					file := os.NewFile(3, "systemd-socket")
+					l, err := net.FileListener(file)
+					_ = file.Close()
+					if err != nil {
+						return nil, fmt.Errorf("failed to adopt systemd socket: %w", err)
+					}
+					return l, nil
 				}
-				return l, nil
 			}
 		}
 	}
@@ -238,7 +241,11 @@ func runService(args []string) {
 		if err := service.InstallService(exe, *port, *idleTimeout); err != nil {
 			log.Fatalf("Installation failed: %v", err)
 		}
-		fmt.Printf("\n✓ Service & socket installed with on-demand activation and %s idle auto-shutdown.\n", *idleTimeout)
+		if runtime.GOOS == "windows" {
+			fmt.Printf("\n✓ Windows background service task installed (runs at logon with %s idle auto-shutdown).\n", *idleTimeout)
+		} else {
+			fmt.Printf("\n✓ Service & socket installed with on-demand activation and %s idle auto-shutdown.\n", *idleTimeout)
+		}
 		fmt.Println("Check status with: gemini-proxy service status")
 	case "status":
 		_ = service.StatusService()

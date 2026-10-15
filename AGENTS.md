@@ -4,11 +4,17 @@
 GeminiProxy is a lightweight, high-performance Go proxy daemon that allows Hermes Agent to use Google Gemini models (including Gemini 4 Argon, Gemini 3.8 Flash, and Gemini 3.1 Pro) via the local authenticated Google Antigravity CLI (`agy`).
 
 ### Key Components
-- `main.go`: CLI entrypoint and subcommand routing (`serve`, `setup-hermes`, `service`, `test`).
+- `main.go`: CLI entrypoint, subcommand routing (`serve`, `setup-hermes`, `service`, `test`), and platform-aware listener initialization.
 - `pkg/api`: HTTP server handling OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/models`), SSE streaming, and Ollama/Hermes capability probes.
 - `pkg/worker`: Worker pool managing persistent background `agy` CLI processes (`--input-format stream-json --output-format stream-json`).
 - `pkg/prompt`: Formats OpenAI messages and tool declarations; parses `<tool_call>` XML blocks from model outputs.
-- `pkg/service`: Systemd user service installation, management, and on-demand socket activation.
+- `pkg/service`: Cross-platform process watcher and service management:
+  - `watcher.go`: Core watcher state and timer coordination.
+  - `watcher_linux.go`: Linux process detection via `/proc/*/cmdline` (`!windows`).
+  - `watcher_windows.go`: Windows process detection via Win32 Toolhelp32 snapshot API (`windows`).
+  - `systemd.go`: Linux systemd user service installation, socket activation, and management (`!windows`).
+  - `service_windows.go`: Windows background service management via user Startup scripts and Scheduled Tasks (`windows`).
+  - `hermes.go`: Automates configuration of `~/.hermes/config.yaml` (`%USERPROFILE%\.hermes\config.yaml` on Windows).
 - `pkg/types`: Core types and schemas.
 
 ---
@@ -33,32 +39,50 @@ To prevent irreversible data loss or unintentional state corruption, agents **MU
 ## Development & Operational Commands
 
 - **Build Binary**:
-  ```bash
-  go build -o gemini-proxy .
-  ```
+  - Linux:
+    ```bash
+    go build -o gemini-proxy .
+    ```
+  - Windows:
+    ```powershell
+    go build -o gemini-proxy.exe .
+    ```
 
 - **Run Tests / Verification**:
   ```bash
   go test ./...
-  ./gemini-proxy test
+  ./gemini-proxy test         # On Windows: .\gemini-proxy.exe test
   ```
 
 - **Run Server Directly**:
-  ```bash
-  ./gemini-proxy serve --port 8888
-  ```
+  - Linux:
+    ```bash
+    ./gemini-proxy serve --port 8888
+    ```
+  - Windows:
+    ```powershell
+    .\gemini-proxy.exe serve --port 8888
+    ```
 
 - **Service Management**:
-  ```bash
-  ./gemini-proxy service install   # Install socket-activated systemd service
-  ./gemini-proxy service status    # Check status of socket and service
-  ./gemini-proxy service restart   # Restart service
-  ./gemini-proxy service stop      # Stop service
-  ```
+  - Linux (Socket-activated systemd user service):
+    ```bash
+    ./gemini-proxy service install   # Install socket-activated systemd service
+    ./gemini-proxy service status    # Check status of socket and service
+    ./gemini-proxy service restart   # Restart service
+    ./gemini-proxy service stop      # Stop service
+    ```
+  - Windows (Logon Startup script & Scheduled Task):
+    ```powershell
+    .\gemini-proxy.exe service install   # Install logon startup service
+    .\gemini-proxy.exe service status    # Check service running status & PID
+    .\gemini-proxy.exe service restart   # Restart service
+    .\gemini-proxy.exe service stop      # Stop service
+    ```
 
 - **Hermes Setup**:
   ```bash
-  ./gemini-proxy setup-hermes      # Backs up and configures ~/.hermes/config.yaml
+  ./gemini-proxy setup-hermes      # On Windows: .\gemini-proxy.exe setup-hermes
   ```
 
 ---

@@ -12,8 +12,9 @@ Zero external API keys, zero cloud costs beyond your Google account quota, and f
 - **Hermes Tool Calling**: Translates Hermes agent tools (bash/terminal, file editing, web search, etc.) into structured model prompts and converts model responses back into standard OpenAI `tool_calls`.
 - **Persistent Worker Pool**: Keeps `agy` CLI background worker processes alive via `--input-format stream-json --output-format stream-json` for sub-second turn latency without repeated startup overhead.
 - **Real-Time SSE Streaming**: Native Server-Sent Events (`text/event-stream`) for token-by-token streaming in the Hermes terminal and TUI.
-- **Systemd User Service**: Runs quietly in the background as a user service (`gemini-proxy.service`), auto-starting on login so Hermes is always ready to go.
-- **Hermes Auto-Configurator**: Built-in `setup-hermes` command that safely backs up and updates `~/.hermes/config.yaml`.
+- **Cross-Platform Background Service**: Runs quietly in the background as a user service — on Linux via `systemd` with on-demand socket activation, and on Windows via user startup scripts and scheduled tasks.
+- **Process Lifecycle Watcher**: Automatically monitors the active Hermes Agent process (`/proc` on Linux, Win32 Toolhelp32 snapshot on Windows) and shuts down automatically when Hermes closes.
+- **Hermes Auto-Configurator**: Built-in `setup-hermes` command that safely backs up and updates `~/.hermes/config.yaml` (`%USERPROFILE%\.hermes\config.yaml` on Windows).
 
 ---
 
@@ -53,35 +54,51 @@ Zero external API keys, zero cloud costs beyond your Google account quota, and f
 ## 🛠️ Installation & Setup
 
 ### 1. Build Binary
-The binary is already compiled in the repository:
-```bash
-go build -o gemini-proxy .
-```
 
-### 2. Install & Start Systemd Service (On-Demand Socket Activation)
-To install `gemini-proxy` with on-demand socket activation and automatic idle scale-to-zero:
+- **Linux / macOS**:
+  ```bash
+  go build -o gemini-proxy .
+  ```
+- **Windows (PowerShell)**:
+  ```powershell
+  go build -o gemini-proxy.exe .
+  ```
+
+### 2. Install & Start Background Service
+
+#### Linux (Systemd with Socket Activation)
 ```bash
 ./gemini-proxy service install
 ```
-With socket activation:
 - `gemini-proxy.socket` listens on port 8888 taking 0 MB RAM and 0% CPU while idle.
 - When Hermes Agent sends a query, systemd activates `gemini-proxy` instantly.
 - After 10 minutes of inactivity (configurable via `--idle-timeout`), `gemini-proxy` gracefully shuts down and frees all memory.
-- When Hermes sends another query, it wakes up automatically!
+- Check status:
+  ```bash
+  ./gemini-proxy service status
+  # or
+  systemctl --user status gemini-proxy.socket gemini-proxy.service
+  ```
 
-Verify status:
-```bash
-./gemini-proxy service status
-# or
-systemctl --user status gemini-proxy.socket gemini-proxy.service
+#### Windows (Logon Startup & Scheduled Task)
+```powershell
+.\gemini-proxy.exe service install --port 8888 --idle-timeout 10m
 ```
+- Installs a user startup script (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\gemini-proxy.bat`) and runner script (`run_proxy.bat`).
+- Automatically starts a detached background instance with zero admin rights required.
+- Check status:
+  ```powershell
+  .\gemini-proxy.exe service status
+  ```
 
 ### 3. Configure Hermes Agent
 Point your Hermes Agent to `gemini-proxy`:
 ```bash
 ./gemini-proxy setup-hermes
+# On Windows:
+.\gemini-proxy.exe setup-hermes
 ```
-*(This automatically creates a timestamped backup of `~/.hermes/config.yaml` before updating).*
+*(This automatically creates a timestamped backup of `~/.hermes/config.yaml` or `%USERPROFILE%\.hermes\config.yaml` before updating).*
 
 ---
 
@@ -91,6 +108,8 @@ Point your Hermes Agent to `gemini-proxy`:
 Test if the proxy can talk to `agy` and generate a response:
 ```bash
 ./gemini-proxy test
+# On Windows:
+.\gemini-proxy.exe test
 ```
 
 ### Test Hermes End-to-End
@@ -124,13 +143,13 @@ Commands:
                   --base-url <url>     Proxy base URL (default: http://127.0.0.1:8888/v1)
                   --model <name>       Model name (default: gemini-3.8-flash-high)
 
-  service       Manage systemd on-demand background service
+  service       Manage background service (systemd on Linux, Startup/Tasks on Windows)
                 Actions:
-                  install              Install socket & service unit files, enable, and activate
+                  install              Install background service
                                        Flags: --port 8888, --idle-timeout 10m
-                  status               Show socket and service status
-                  stop                 Stop the background daemon and socket
-                  restart              Restart the daemon and socket
+                  status               Show service and process status
+                  stop                 Stop the background daemon
+                  restart              Restart the daemon
 
   test          Send a synthetic chat completion test
                 Flags:
@@ -159,11 +178,17 @@ You can specify any of the following model aliases in Hermes (`hermes -m <model>
 
 ## 📜 Logs & Troubleshooting
 
-- View proxy live logs:
-  ```bash
-  journalctl --user -u gemini-proxy -f
-  ```
-- View Hermes logs:
+- **View Proxy Live Logs**:
+  - **Linux**:
+    ```bash
+    journalctl --user -u gemini-proxy -f
+    ```
+  - **Windows**:
+    Background service logs are written to:
+    ```powershell
+    Get-Content "$env:TEMP\gemini-proxy-service.log" -Wait
+    ```
+- **View Hermes Logs**:
   ```bash
   hermes logs -f
   ```

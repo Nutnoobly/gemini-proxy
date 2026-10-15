@@ -2,9 +2,7 @@ package service
 
 import (
 	"log"
-	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -27,8 +25,10 @@ func NewHermesWatcher(onHermesClose func()) *HermesWatcher {
 
 // Arm manually marks that Hermes has been active (e.g. upon receiving a chat request).
 func (w *HermesWatcher) Arm() {
-	if w.hermesWasActive.CompareAndSwap(false, true) {
-		log.Println("[Hermes Watcher] Armed: Hermes activity registered.")
+	if IsHermesRunning() {
+		if w.hermesWasActive.CompareAndSwap(false, true) {
+			log.Println("[Hermes Watcher] Armed: Hermes activity registered.")
+		}
 	}
 }
 
@@ -72,38 +72,6 @@ func (w *HermesWatcher) Stop() {
 	default:
 		close(w.stopCh)
 	}
-}
-
-// IsHermesRunning checks /proc to determine if any Hermes Agent process is currently alive.
-func IsHermesRunning() bool {
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return false
-	}
-
-	myPID := os.Getpid()
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		pidStr := entry.Name()
-		pid, err := strconv.Atoi(pidStr)
-		if err != nil || pid == myPID {
-			continue
-		}
-
-		cmdlineBytes, err := os.ReadFile(filepath.Join("/proc", pidStr, "cmdline"))
-		if err != nil {
-			continue
-		}
-
-		if isHermesCmdline(string(cmdlineBytes)) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func isHermesCmdline(raw string) bool {

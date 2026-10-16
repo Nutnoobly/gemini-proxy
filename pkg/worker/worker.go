@@ -16,16 +16,18 @@ import (
 
 // Worker represents a persistent agy subprocess.
 type Worker struct {
-	model        string
-	cmd          *exec.Cmd
-	stdin        io.WriteCloser
-	scanner      *bufio.Scanner
-	mu           sync.Mutex
-	turnMu       sync.Mutex
-	isHealthy    atomic.Bool
-	lastUsed     time.Time
-	initPayload  *InitPayload
-	onDead       func()
+	model       string
+	cmd         *exec.Cmd
+	stdin       io.WriteCloser
+	scanner     *bufio.Scanner
+	mu          sync.Mutex
+	turnMu      sync.Mutex
+	lastUsage   UsageStats // cumulative agy counters, protected by turnMu
+	usageGap    bool
+	isHealthy   atomic.Bool
+	lastUsed    time.Time
+	initPayload *InitPayload
+	onDead      func()
 }
 
 // NewWorker starts a new agy subprocess for the specified model.
@@ -64,12 +66,12 @@ func NewWorker(model string, onDead func()) (*Worker, error) {
 	scanner.Buffer(buf, 10*1024*1024)
 
 	w := &Worker{
-		model:     model,
-		cmd:       cmd,
-		stdin:     stdin,
-		scanner:   scanner,
-		lastUsed:  time.Now(),
-		onDead:    onDead,
+		model:    model,
+		cmd:      cmd,
+		stdin:    stdin,
+		scanner:  scanner,
+		lastUsed: time.Now(),
+		onDead:   onDead,
 	}
 	w.isHealthy.Store(true)
 
@@ -226,6 +228,7 @@ func (w *Worker) SendPrompt(ctx context.Context, prompt string, onDelta func(str
 		w.mu.Lock()
 		w.lastUsed = time.Now()
 		w.mu.Unlock()
+		res.res.Usage = w.turnUsage(res.res.Usage)
 		return res.res, nil
 	}
 }

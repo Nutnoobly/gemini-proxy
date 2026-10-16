@@ -87,3 +87,16 @@ func FormatPrompt(messages []types.ChatMessage, tools []types.Tool) string {
 	sb.WriteString("Assistant: ")
 	return sb.String()
 }
+
+// EstimateTokens approximates token count (~4 characters per token for Gemini).
+func EstimateTokens(text string) int {
+	if len(text) == 0 {
+		return 0
+	}
+	runes := len([]rune(text))
+	tokens := (runes + 3) / 4
+	if tokens < 1 {
+		return 1
+	}
+	return tokens
+}

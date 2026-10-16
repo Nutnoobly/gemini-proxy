@@ -202,6 +202,9 @@ func runServe(args []string) {
 
 	_ = httpServer.Shutdown(ctx)
 	pool.CloseAll()
+	if err := server.Close(); err != nil {
+		log.Printf("[Main] Usage persistence shutdown warning: %v", err)
+	}
 	log.Println("[Main] All workers stopped. Goodbye!")
 }
 

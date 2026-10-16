@@ -12,7 +12,8 @@ import (
 func TestHandleModels(t *testing.T) {
 	pool := worker.NewWorkerPool()
 	defer pool.CloseAll()
-	server := NewServer(pool)
+	server := NewServer(pool, WithUsageFile(""))
+	t.Cleanup(func() { _ = server.Close() })
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	w := httptest.NewRecorder()
@@ -44,7 +45,8 @@ func TestHandleModels(t *testing.T) {
 func TestHandleModelDetail(t *testing.T) {
 	pool := worker.NewWorkerPool()
 	defer pool.CloseAll()
-	server := NewServer(pool)
+	server := NewServer(pool, WithUsageFile(""))
+	t.Cleanup(func() { _ = server.Close() })
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models/gemini-4-argon", nil)
 	w := httptest.NewRecorder()

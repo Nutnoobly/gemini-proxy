@@ -38,13 +38,14 @@ type UsageStats struct {
 	ThinkingTokens  int `json:"thinking_tokens"`
 	CacheReadTokens int `json:"cache_read_tokens"`
 	TotalTokens     int `json:"total_tokens"`
+	incomplete      bool
 }
 
 // StepPayload represents a turn progression event.
 type StepPayload struct {
 	ConversationID  string      `json:"conversation_id"`
 	StepIndex       int         `json:"step_index"`
-	State           string      `json:"state"` // "ACTIVE", "DONE"
+	State           string      `json:"state"`     // "ACTIVE", "DONE"
 	StepType        string      `json:"step_type"` // "agent_response", "user_input"
 	TextDelta       string      `json:"text_delta"`
 	DurationSeconds float64     `json:"duration_seconds"`

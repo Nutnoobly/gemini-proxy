@@ -38,23 +38,41 @@ type FunctionCall struct {
 	Arguments string `json:"arguments"`
 }
 
-// ChatCompletionRequest is the incoming payload for /v1/chat/completions.
-type ChatCompletionRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	Tools       []Tool        `json:"tools,omitempty"`
-	ToolChoice  any           `json:"tool_choice,omitempty"`
-	Stream      bool          `json:"stream,omitempty"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	TopP        *float64      `json:"top_p,omitempty"`
-	MaxTokens   *int          `json:"max_tokens,omitempty"`
+// StreamOptions controls optional streaming metadata.
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
-// Usage represents token accounting.
+// ChatCompletionRequest is the incoming payload for /v1/chat/completions.
+type ChatCompletionRequest struct {
+	Model         string         `json:"model"`
+	Messages      []ChatMessage  `json:"messages"`
+	Tools         []Tool         `json:"tools,omitempty"`
+	ToolChoice    any            `json:"tool_choice,omitempty"`
+	Stream        bool           `json:"stream,omitempty"`
+	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+	Temperature   *float64       `json:"temperature,omitempty"`
+	TopP          *float64       `json:"top_p,omitempty"`
+	MaxTokens     *int           `json:"max_tokens,omitempty"`
+}
+
+// PromptTokensDetails carries breakdown of prompt tokens (e.g. prompt caching).
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+// CompletionTokensDetails carries breakdown of completion tokens (e.g. reasoning/thinking).
+type CompletionTokensDetails struct {
+	ReasoningTokens int `json:"reasoning_tokens"`
+}
+
+// Usage represents token accounting matching OpenAI Chat Completions specification.
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens            int                      `json:"prompt_tokens"`
+	CompletionTokens        int                      `json:"completion_tokens"`
+	TotalTokens             int                      `json:"total_tokens"`
+	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
 }
 
 // Choice represents a non-streaming completion choice.
@@ -71,7 +89,7 @@ type ChatCompletionResponse struct {
 	Created int64    `json:"created"`
 	Model   string   `json:"model"`
 	Choices []Choice `json:"choices"`
-	Usage   Usage    `json:"usage"`
+	Usage   *Usage   `json:"usage,omitempty"`
 }
 
 // ChunkDelta is the delta payload in an SSE streaming chunk.
@@ -95,6 +113,7 @@ type ChatCompletionChunk struct {
 	Created int64         `json:"created"`
 	Model   string        `json:"model"`
 	Choices []ChunkChoice `json:"choices"`
+	Usage   *Usage        `json:"usage,omitempty"`
 }
 
 // ModelCard represents a model entry in /v1/models.

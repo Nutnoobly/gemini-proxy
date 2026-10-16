@@ -1,2 +1,4 @@
 gemini-proxy
 *.log
+__pycache__/
+*.py[cod]

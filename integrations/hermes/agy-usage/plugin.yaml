@@ -1,0 +1,14 @@
+name: agy-usage
+version: "1.0.0"
+description: Read-only proxy-wide GeminiProxy usage, independent of Hermes session usage.
+manifest_version: 2
+api_version: 1
+kind: standalone
+provides_tools: []
+provides_hooks: []
+capabilities: []
+config_schema:
+  base_url:
+    type: string
+    default: ""
+    description: Explicit GeminiProxy API base URL (for example http://127.0.0.1:8888/v1); never inferred from the current model.

@@ -87,6 +87,17 @@ To prevent irreversible data loss or unintentional state corruption, agents **MU
 
 ---
 
+## Usage Accounting Invariants
+
+- `pkg/worker/usage.go` converts agy's conversation-cumulative terminal counters into request deltas. Never add overlapping step/result totals or repeatedly charge previous turns.
+- `pkg/api/usage.go` is the shared OpenAI mapper: total prompt includes cache reads; output already includes reasoning. Validate changes against actual upstream semantics, not model-name assumptions. Evidence is in `docs/usage-accounting.md`.
+- `pkg/api/usage_tracker.go` owns versioned proxy-wide counters, process ownership and atomic persistence. Record each successful upstream completion once, including unknown usage separately. Missing metadata is not measured zero and must not be estimated as actual usage.
+- Streaming usage is opt-in (`stream_options.include_usage=true`): finish chunk, usage-only `choices: []` chunk, then `[DONE]`. Preserve plain-text and tool-call behavior.
+- Usage endpoints are read-only GET. Do not add shared reset behavior or erase state as part of a session reset. Tests inject temporary state paths; never write real user state.
+- `integrations/hermes/agy-usage` owns the standalone command plugin; `integrations/hermes/install_agy_usage.py` installs without overwriting. It queries its explicit configured proxy URL and registers no tools/hooks. Do not edit Hermes core, existing `/usage`, inference routing, prompts or caching for this integration.
+- Verify with `go test ./...`, `go test -race ./...`, `go vet ./...`, `hermes --run-module unittest discover -s integrations/hermes/agy-usage/tests -v`, and `hermes plugins doctor integrations/hermes/agy-usage --ci`. Cross-compile Windows changes; do not claim native Windows runtime coverage from Linux builds.
+- Live acceptance must verify real non-streaming/streaming counters, restart persistence, and `/usage` plus `/agy-usage` in the same Hermes session. Usage GETs must not create model calls or mutate session counters. Never invent quota, prices or context lengths.
+
 ## Agent Conventions
 - Write clean, idiomatic Go code formatted with `gofmt`.
 - Maintain thread safety across concurrent components (`pkg/worker`, `pkg/api`) using proper synchronization primitives.

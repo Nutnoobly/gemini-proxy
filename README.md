@@ -159,6 +159,62 @@ Commands:
 
 ---
 
+## 📊 Token Usage and Hermes `/agy-usage`
+
+Hermes's existing `/usage` now receives measured input/output, cache and reasoning tokens through standard Chat Completions responses. No Hermes core edits are required. Token estimates are not passed off as real measurements; missing/invalid metadata stays unavailable. Costs and context capacity are not inferred from model names.
+
+Streaming clients must opt in to usage:
+
+```sh
+curl -N http://127.0.0.1:8888/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gemini-3.8-flash-high","messages":[{"role":"user","content":"Reply OK"}],"stream":true,"stream_options":{"include_usage":true}}'
+```
+
+The finish chunk is followed by one usage-only chunk (`choices: []`) and then `[DONE]`. Non-streaming responses carry the same measured usage without the streaming opt-in. agy 1.3.6 terminal counters are cumulative across its persistent process; the proxy calculates request deltas, includes cache reads in prompt totals, and does not add reasoning twice. See [the verified accounting contract](docs/usage-accounting.md).
+
+Read persistent proxy-wide statistics:
+
+```sh
+curl -fsS http://127.0.0.1:8888/v1/usage
+```
+
+This is observed usage across proxy clients/sessions, not Google account quota, remaining capacity or billing. Both `/v1/usage` and `/usage` are read-only GET endpoints; there is no reset endpoint. Totals distinguish measured and unknown-usage completions. Linux state defaults to `$XDG_STATE_HOME/gemini-proxy/usage.json` or `~/.local/state/gemini-proxy/usage.json`; Windows uses `%LOCALAPPDATA%\gemini-proxy\usage.json`. `GEMINI_PROXY_USAGE_FILE` overrides the proxy state file. See the accounting contract for macOS paths, locking, permissions, persistence warnings and recovery limitations. Keep the proxy bound to loopback unless protected by appropriate access controls.
+
+### Separate Hermes command (optional)
+
+From this repository, install the bundled command-only plugin into the active Hermes profile:
+
+```sh
+printf '%s\n' 'import runpy; _ = runpy.run_path("integrations/hermes/install_agy_usage.py", run_name="__main__")' | hermes --run-module code -q
+hermes plugins doctor agy-usage --ci
+hermes config set plugins.entries.agy-usage.settings.base_url http://127.0.0.1:8888/v1
+hermes plugins enable agy-usage --no-allow-tool-override
+```
+
+The installer refuses to overwrite an existing plugin. Start a new Hermes session and use `/agy-usage` or `/agy-usage --json`. This command makes only a read-only HTTP request: no model calls, tools, hooks or changes to session counters. It uses the explicitly configured URL, NOT the current model's provider route; switching models does not change which proxy it queries. It does not borrow provider credentials or follow redirects. `/usage` remains session-scoped; `/agy-usage` is proxy-wide. Neither resets the other's counters.
+
+Disable with `hermes plugins disable agy-usage`. To uninstall later, use `hermes plugins remove agy-usage` and review its confirmation; removal does not erase proxy statistics. [Compatibility, installation and troubleshooting](integrations/hermes/agy-usage/COMPATIBILITY.md).
+
+### Verification and troubleshooting
+
+```sh
+go test ./...
+go test -race ./...
+go vet ./...
+hermes --run-module unittest discover -s integrations/hermes/agy-usage/tests -v
+hermes plugins doctor integrations/hermes/agy-usage --ci
+```
+
+- Test `/usage` after a real prompt in the SAME Hermes session; a separate fresh session does not verify session accounting.
+- A 404 from `/v1/usage` usually means the old proxy binary is still running or the URL is wrong.
+- An unavailable/unknown measurement is not zero and is not replaced by an estimate.
+- Check `persistence.healthy` and logs for disk, corrupt-state or competing-owner warnings; chat can work while durable statistics are unavailable. Never delete the ownership lock while a daemon is running.
+- `/agy-usage` requires its explicit URL setting. A 401/403 from an authenticated reverse proxy is reported without reusing unrelated model credentials.
+- The prototype's old unversioned `~/.config/gemini-proxy/usage.json` is not migrated or overwritten; tracking begins in the versioned state file.
+
+---
+
 ## 🧠 Supported Gemini Models
 
 You can specify any of the following model aliases in Hermes (`hermes -m <model>` or in `config.yaml`):
